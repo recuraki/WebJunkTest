@@ -300,7 +300,16 @@
                 }
                 if (candidateElevatorNum === -1) {
                     console.log(" Unfortunately! All elevators load is too high! ")
-                    waitingListByFloor.push([floorNum, direction])
+                    isExist = false;
+                    for ( var i = 0; i < waitingListByFloor.length; i++) {
+                        q = waitingListByFloor[i];
+                        if (q[0] == floorNum && q[1] == direction) {
+                            isExist = true;
+                        }
+                    }
+                    if (isExist === false) {
+                        waitingListByFloor.push([floorNum, direction]);
+                    }
                     return false;
                 } else {
                     if (direction === "up") {
@@ -311,6 +320,24 @@
                         return true;
                     }
                 }
+            }
+        }
+
+        function assignQueueToFreeElevator() {
+            if (waitingListByFloor.length !== 0) {
+                console.log("waitingList is EXIST... Try to assign...");
+                console.log(waitingListByFloor)
+                waitingListByFloorNew = [];
+                for (var i = 0; i < waitingListByFloor.length; i++) {
+                    q = waitingListByFloor[i];
+                    floorNum = q[0];
+                    type = q[1];
+                    if (elevaorSelect(floorNum, type) === false) {
+                        waitingListByFloorNew.push(q);
+                    }
+                    console.log("assignQueueToFreeElevator(try: "+ q +")");
+                }
+                waitingListByFloor = waitingListByFloorNew;
             }
         }
 
@@ -391,11 +418,18 @@
                 // ここは普通のdesticationQueueを使っていい(installされている経路を使うべきである)
                 if(elevator.destinationQueue.length === 0){ // stop時
                     goingBoth(elevator); // 上下両方に行けることを通知
+                    console.log("Elevator[" + elevator.number + "] LAMP BOTH");
                 } else if(elevator.destinationQueue[0] > elevator.currentFloor() ) { // 上向き
                     goingUp(elevator);
+                    console.log("Elevator[" + elevator.number + "] LAMP UP");
                 } else { // 下向き
                     goingDown(elevator);
+                    console.log("Elevator[" + elevator.number + "] LAMP DOWN");
                 }
+
+                // アサイン
+                assignQueueToFreeElevator();
+
 
             });
         });
@@ -410,6 +444,7 @@
                 floorNum = floor.floorNum()
                 console.log("Floor[" + floorNum + "]: Up button_pressed");
                 elevaorSelect(floorNum, "up")
+
             });
             floor.on("down_button_pressed", function() {
                 floorNum = floor.floorNum()
