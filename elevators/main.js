@@ -3,7 +3,7 @@
 
         const num_allelevator = elevator_list.length;
         const num_allfloor = floor_list.length;
-
+        var waitingListByFloor = [];
 
         // 停車したフロアの区分によって乗車率を予測する。
         const predictFloorLoadIn = 1.25; // フロアで乗ってきそうな人数 の変化量(+は増加)
@@ -272,14 +272,17 @@
             }
         }
 
-        // typeはU or D
-        function elevaorSelect(floorNum, type) {
+        function elevaorSelect(floorNum, direction) {
+            /*
+            typeはU or D
+            return: false(追加できなかった), true(追加できた)
+             */
             candidateElevatorNum = -1; // -1 = 未選択
             candidateCost = 10
             candidateIndex = -1
             for (var i = 0; i < num_allelevator; i++) {
                 e = elevator_list[i];
-                predict = calcDistanceLoad(e.internalQueue, e.currentFloor(), floorNum, e.destinationDirection(),
+                predict = calcDistanceLoad(e.internalQueue, e.currentFloor(), floorNum, e.destinationDirection(), direction,
                     e.loadFactor(), e.maxPassengerCount());
                 var cost = predict[0];
                 var pl = predict[1];
@@ -297,8 +300,16 @@
                 }
                 if (candidateElevatorNum === -1) {
                     console.log(" Unfortunately! All elevators load is too high! ")
+                    waitingListByFloor.push([floorNum, direction])
+                    return false;
                 } else {
-                    addQueue(elevator_list[candidateElevatorNum], floorNum, type, candidateIndex);
+                    if (direction === "up") {
+                        addQueue(elevator_list[candidateElevatorNum], floorNum, "U", candidateIndex);
+                        return true;
+                    } else if (direction === "down") {
+                        addQueue(elevator_list[candidateElevatorNum], floorNum, "D", candidateIndex);
+                        return true;
+                    }
                 }
             }
         }
@@ -363,7 +374,6 @@
             elevator.on("stopped_at_floor", function(floorNum) {
                 console.log("Elevator[" + elevator.number + "]: stopped_at_floor : " + floorNum);
                 // エレベータ自身にその階向けのqueueがあれば削除する
-                /*
                 var isChange = true;
                 while(isChange) {
                     isChange = false;
@@ -372,11 +382,11 @@
                             console.log("Elevator[" + elevator.number + "] erase internal queue " + i);
                             elevator.internalQueue.splice(i, 1);
                             isChange = true;
+                            break;
                         }
                     }
                 }
                 refreshQueue(elevator);
-                 */
 
                 // ここは普通のdesticationQueueを使っていい(installされている経路を使うべきである)
                 if(elevator.destinationQueue.length === 0){ // stop時
@@ -398,13 +408,13 @@
         floor_list.forEach(function(floor) {
             floor.on("up_button_pressed", function() {
                 floorNum = floor.floorNum()
-                console.log("Floor[" + floorNum + "]: button_pressed");
-                elevaorSelect(floorNum, "U")
+                console.log("Floor[" + floorNum + "]: Up button_pressed");
+                elevaorSelect(floorNum, "up")
             });
             floor.on("down_button_pressed", function() {
                 floorNum = floor.floorNum()
-                console.log("Floor[" + floorNum + "]: button_pressed");
-                elevaorSelect(floorNum, "D")
+                console.log("Floor[" + floorNum + "]: Down button_pressed");
+                elevaorSelect(floorNum, "down")
             });
         });
     },
