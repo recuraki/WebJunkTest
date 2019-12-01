@@ -5,12 +5,12 @@ module.exports.predictFloorLoadIn = predictFloorLoadIn;
 module.exports.predictFloorLoadOut = predictFloorLoadOut;
 
 function diffPredictLoadByListInfo(dest, maxPassengerCount) {
-    if (dest[1] === "F") {
+    console.log("diffPredictLoadByListInfo +" dest + "/" + maxPassengerCount)
+    if (dest[1] === "U" || dest[1] === "D") {
         return Math.floor(predictFloorLoadIn / maxPassengerCount * 100) / 100;
-
     } else if (dest[1] === "E") {
         return Math.floor(predictFloorLoadOut / maxPassengerCount * 100) / 100;
-    } else if (dest[1] === "B") {
+    } else if (dest[1] === "EU" || dest[1] === "ED") {
         return Math.floor(( predictFloorLoadIn + predictFloorLoadOut ) / maxPassengerCount * 100) / 100;
     }
     return 0;
@@ -38,110 +38,131 @@ function calcDistanceLoad(destqueue, lvcur, lvtarget, direction, directionTarget
 
 
     var cost = 0;
-    var loadPredict = loadcur
+    var loadPredict = loadcur;
     if(destqueue.length === 0){
         // 宛先キューが一切ない場合、index = 0として返す(頭に挿入されれば良い)
-        return [Math.abs(lvcur - lvtarget), 0, loadPredict, 0];
+        return [Math.abs(lvcur - lvtarget), loadcur, 0];
     }
 
-    var lvtmp = lvcur;
+    /* 停車状態が与えられた時の処理 */
+    if (direction === "stop") {
+        if (destqueue[0][0] < lvcur) {
+            direction = "down";
+        } else if (destqueue[i][0] > lvcur) {
+            direction = "up";
+        } else {
+            // 基本的に同じ階の時に停車中というのはないはずだが、
+            console.log("UNREACH")
+            direction = "down";
+        }
+    }
+
     // すべてのリストについて走査を行う
     for(i = 0; i < destqueue.length; i++) {
 
-        // console.debug("i=" + i + ", " + destqueue[i] + "lp=" + loadPredict)
         cost += 1;
-
-        /******************/
-        /* 上下反転ロジック。 */
-        /* 今までの移動方向に対して逆方向に進む方向なのであれば、方向を逆転させる*/
-        /******************/
-        if(direction === "up") {
-            // 次の階は下方であり、対象は今の位置よりも下なのであれば下向きにする
-            // 次の階が下方であっても、対象がより上の階ならそのまま上向きにしなければならない
-            if(destqueue[i][0] < lvtmp && lvtarget <= lvtmp) {
-                direction = "down";
-            }
-        } else if (direction === "down") {
-            // 次の階は上方であり、対象は今の位置よりも上なのであれば上向きにする
-            // 次の階が上方であっても、対象がより下の階ならそのまま下向きにしなければならない
-            if (destqueue[i][0] > lvtmp && lvtarget >= lvtmp) {
-                direction = "up";
-            }
-        }
+        console.debug("i=" + i + " lvcur=" + lvcur + " queue=" + destqueue[i] + " lp=" + loadPredict + " cost: " + cost + " dir=" + direction)
 
         /******************/
         /* 上 */
         /******************/
         if (direction === "up") {
-            if (destqueue[i][0] < lvtmp) { // 次の宛先がした側であるなら、
-                if(lvtarget > lvtmp) { // もし、目標がより高いフロアにあるならそれを返す
+            if( (i + 1) < destqueue.length ) {
+                /* もしも、次はdownになるのだが、targetが今より上になる場合、 */
+                if (destqueue[i][0] > destqueue[i + 1][0] && lvtarget > lvcur) {
+                    // 上が押されていても下が押されていても気にしないで上に突っ走ることになる
+                    console.log(" target is more overarea")
                     loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                    cost += Math.abs(lvtarget - lvtmp);
+                    cost += Math.abs(lvtarget - lvcur);
+                    cost += 1;
                     // indexは次の前に挿入する
-                    return [cost, loadPredict, i];
+                    return [cost, loadPredict, i + 1];
                 }
-                // そうでないなら次は下向き(で、コストを加算しないで次へ)
-                loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                cost -= 1;
-                direction = "down";
-                continue
             }
-            if (destqueue[i][0] > lvtarget && lvcur < lvtarget) { // もし、次の目的地がターゲットを超えるのであればそこまでの距離を生産
-                cost += Math.abs(lvtarget - lvtmp);
+            if (destqueue[i][0] > lvtarget && lvtarget > lvcur && directionTarget !== "down") {
+                // 次の目的地がターゲットを超えるのであればそこまでの距離を生産
+                // この場合、上記の通り、directionTargetはdownではいけない
+                console.log("target is between area[up");
+                cost += Math.abs(lvtarget - lvcur);
                 // 次の目的地の前に目的地があるのだからi-1
                 return [cost, loadPredict, i];
             }
             // 単調増加中である場合、そこまでの距離を足す
+            console.log("continue");
             loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-            cost += Math.abs(lvtmp - destqueue[i][0]);
-            lvtmp = destqueue[i][0];
-        } else if (direction === "down") {
-            if (destqueue[i][0] > lvtmp) { // 上向きになったとき場合
-                if(lvtarget < lvtmp) { // もし、目標がより下であったならそれを返す
+            cost += Math.abs(lvcur - destqueue[i][0]);
+            lvcur = destqueue[i][0];
+        }
+        /******************/
+        /* 下り */
+        /******************/
+        else if (direction === "down") {
+            if( (i + 1) < destqueue.length ) {
+                /* もしも、次はupになるのだが、targetが今より下になる場合、 */
+                if (destqueue[i][0] < destqueue[i + 1][0] && lvtarget < lvcur) {
+                    // 上が押されていても下が押されていても気にしないで下に突っ走ることになる
+                    console.log(" target is more underarea")
                     loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                    cost += Math.abs(lvtarget - lvtmp);
+                    cost += Math.abs(lvtarget - lvcur);
+                    cost += 1;
                     // indexは次の前に挿入する
-                    return [cost, loadPredict, i];
+                    return [cost, loadPredict, i + 1];
                 }
-                // そうでないなら下向きになったとみなす(で、コストを加算しないで次へ)
-                loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                cost -= 1;
-                direction = "up";
-                continue
             }
-            if (destqueue[i][0] < lvtarget && lvcur > lvtarget) { // もし、次の目的地がターゲットを超えるのであればそこまでの距離を生産
-                cost += Math.abs(lvtarget - lvtmp);
+            if (destqueue[i][0] < lvtarget && lvtarget < lvcur && directionTarget !== "up") {
+                // もし、目的地がターゲットを超えるのであればそこまでの距離を生産
+                // この場合、上記の通り、directionTargetはupではいけない
+                console.log("target is between area[down]");
+                cost += Math.abs(lvtarget - lvcur);
                 // 次の目的地の前に目的地があるのだからi-1
                 return [cost, loadPredict, i];
             }
-            // 単調減少中である場合、そこまでの距離を足す
+            // 単調増加中である場合、そこまでの距離を足す
+            console.log("continue");
             loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-            cost += Math.abs(lvtmp - destqueue[i][0]);
-            lvtmp = destqueue[i][0];
-        } else if (direction === "stop") {
-            if (destqueue[i][0] < lvtmp) {
-                direction = "down";
-            } else if (destqueue[i][0] > lvtmp) {
-                direction = "up";
-            } else {
-                break;
-            }
-            loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-            cost += Math.abs(lvtmp - destqueue[i][0]);
-            lvtmp = destqueue[i][0];
+            cost += Math.abs(lvcur - destqueue[i][0]);
+            lvcur = destqueue[i][0];
         }
+
+        /******************/
+        /* 上下反転ロジック。 */
+        /* 次が今までの移動方向に対して逆方向に進む方向なのであれば、方向を逆転させる*/
+        /******************/
+        if( (i + 1) < destqueue.length ) {
+            if (direction === "up") {
+                // 次の階は下方であり、対象は今の位置よりも下なのであれば下向きにする
+                if (destqueue[i+ 1][0] < lvcur) {
+                    console.log(" reverse!")
+                    direction = "down";
+                }
+            } else if (direction === "down") {
+                // 次の階は上方であり、対象は今の位置よりも上なのであれば上向きにする
+                if (destqueue[i + 1][0] > lvcur) {
+                    console.log(" reverse!")
+                    direction = "up";
+                }
+            }
+        }
+
     }
-    // console.debug("index" + i)
+    console.debug("final: " + i + " lvcur=" + lvcur + " queue=" + destqueue[i] + " lp=" + loadPredict + " cost: " + cost + " dir=" + direction)
     // もう最後の地点まで移動したので、その地点分の待機時間を追加
     cost += 1;
     // 最後の地点からの距離を加算する
-    cost += Math.abs(lvtmp - lvtarget);
+    cost += Math.abs(lvcur - lvtarget);
     return [cost, loadPredict, i]
 }
 module.exports.calcDistanceLoad = calcDistanceLoad;
 module.exports.diffPredictLoadByListInfo = diffPredictLoadByListInfo;
 
-console.log(calcDistanceLoad([[5,"F"], [6,"F"], [3,"F"]], 4, 2, "stop",0, 4));
-console.log(calcDistanceLoad([[5,"F"],[3,"F"],[10,"F"]], 6, 7, "down", 0.5, 4));
-console.log(calcDistanceLoad([[5,"F"], [6,"F"]], 3, 7, "up",0.1, 4));
-console.log(calcDistanceLoad([[2,"F"],[3,"F"],[4,"F"]], 1, 5, "up", 0.2, 4));
+console.log(calcDistanceLoad([[5,"-"], [6,"-"], [2,"-"]], 3, 7, "up","down",0, 4));
+/*
+console.log(calcDistanceLoad([[5,"-"],[3,"-"],[10,"-"]], 6, 7, "down","any",0, 4));
+console.log(calcDistanceLoad([[2,"F"],[5,"F"],[10,"F"],[5,"F"],[2,"F"],], 1, 9, "stop","down",0, 4));
+console.log(calcDistanceLoad([[2,"F"],[5,"F"],[10,"F"],[5,"F"],[2,"F"],], 1, 3, "stop","any",0, 4));
+console.log(calcDistanceLoad([[2,"F"],[5,"F"],[10,"F"],[5,"F"],[2,"F"],], 1, 3, "stop","up",0, 4));
+console.log(calcDistanceLoad([[5,"F"], [6,"F"], [3,"F"]], 4, 2, "stop","down",0, 4));
+console.log(calcDistanceLoad([[5,"F"],[3,"F"],[10,"F"]], 6, 7, "down", "down",0.5, 4));
+console.log(calcDistanceLoad([[5,"F"], [6,"F"]], 3, 7, "up","down",0.1, 4));
+console.log(calcDistanceLoad([[2,"F"],[3,"F"],[4,"F"]], 1, 5, "up", "down",0.2, 4));
+*/

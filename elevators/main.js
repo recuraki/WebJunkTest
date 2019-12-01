@@ -10,18 +10,18 @@
         const predictFloorLoadOut = -1.25; // フロアで降りそうな人数 の変化量(+は増加)
 
         function diffPredictLoadByListInfo(dest, maxPassengerCount) {
-            if (dest[1] === "F") {
+            console.log("diffPredictLoadByListInfo +" + dest + "/" + maxPassengerCount);
+            if (dest[1] === "U" || dest[1] === "D") {
                 return Math.floor(predictFloorLoadIn / maxPassengerCount * 100) / 100;
-
             } else if (dest[1] === "E") {
                 return Math.floor(predictFloorLoadOut / maxPassengerCount * 100) / 100;
-            } else if (dest[1] === "B") {
+            } else if (dest[1] === "EU" || dest[1] === "ED") {
                 return Math.floor(( predictFloorLoadIn + predictFloorLoadOut ) / maxPassengerCount * 100) / 100;
             }
             return 0;
         }
 
-        function calcDistanceLoad(destqueue, lvcur, lvtarget, direction, loadcur, maxPassengerCount) {
+        function calcDistanceLoad(destqueue, lvcur, lvtarget, direction, directionTarget, loadcur, maxPassengerCount) {
             /*
             directionに向かっているエレベータの
             現在の階数(lvcur)から対象の階数(lvtarget)までのコストを計算するとともに、
@@ -31,6 +31,11 @@
             type: F=フロアからの呼び出し、E=エレベータの呼び出し、I=初期位置への移動, B=フロア＋エレベータ呼び出し(both)
             であり、それ以外は無視される。
 
+            directionTargetは"up", "down", "any"のいずれかである。
+            フロアの呼び出しの場合、upかdownが選択されるはずである。
+            この場合、「間」への停車であれば、その時の動きと一致しなければならない。
+            折り返し地点の場合、"up"でも"down"でも停車する。な
+
             戻り値はリストであり、
             [cost, predictLoad, index]
             である。
@@ -38,100 +43,118 @@
 
 
             var cost = 0;
-            var loadPredict = loadcur
+            var loadPredict = loadcur;
             if(destqueue.length === 0){
                 // 宛先キューが一切ない場合、index = 0として返す(頭に挿入されれば良い)
-                return [Math.abs(lvcur - lvtarget), 0, loadPredict, 0];
+                return [Math.abs(lvcur - lvtarget), loadcur, 0];
             }
 
-            var lvtmp = lvcur;
-            // すべてのリストについて走査を行う
-            for(var i = 0; i < destqueue.length; i++) {
-                // console.debug("i=" + i + ", " + destqueue[i] + "lp=" + loadPredict)
-                cost += 1;
-
-                /******************/
-                /* 上下反転ロジック。 */
-                /* 今までの移動方向に対して逆方向に進む方向なのであれば、方向を逆転させる*/
-                /******************/
-                if(direction === "up") {
-                    // 次の階は下方であり、対象は今の位置よりも下なのであれば下向きにする
-                    // 次の階が下方であっても、対象がより上の階ならそのまま上向きにしなければならない
-                    if(destqueue[i][0] < lvtmp && lvtarget <= lvtmp) {
-                        direction = "down";
-                    }
-                } else if (direction === "down") {
-                    // 次の階は上方であり、対象は今の位置よりも上なのであれば上向きにする
-                    // 次の階が上方であっても、対象がより下の階ならそのまま下向きにしなければならない
-                    if (destqueue[i][0] > lvtmp && lvtarget >= lvtmp) {
-                        direction = "up";
-                    }
+            /* 停車状態が与えられた時の処理 */
+            if (direction === "stop") {
+                if (destqueue[0][0] < lvcur) {
+                    direction = "down";
+                } else if (destqueue[i][0] > lvcur) {
+                    direction = "up";
+                } else {
+                    // 基本的に同じ階の時に停車中というのはないはずだが、
+                    console.log("UNREACH")
+                    direction = "down";
                 }
+            }
 
+            // すべてのリストについて走査を行う
+            for(i = 0; i < destqueue.length; i++) {
+
+                cost += 1;
+                console.debug("i=" + i + " lvcur=" + lvcur + " queue=" + destqueue[i] + " lp=" + loadPredict + " cost: " + cost + " dir=" + direction)
+
+                /******************/
+                /* 上 */
+                /******************/
                 if (direction === "up") {
-                    if (destqueue[i][0] < lvtmp) { // 次の対象がした側であるなら、
-                        if(lvtarget > lvtmp) { // もし、目標がより高いフロアにあるならそれを返す
+                    if( (i + 1) < destqueue.length ) {
+                        /* もしも、次はdownになるのだが、targetが今より上になる場合、 */
+                        if (destqueue[i][0] > destqueue[i + 1][0] && lvtarget > lvcur) {
+                            // 上が押されていても下が押されていても気にしないで上に突っ走ることになる
+                            console.log(" target is more overarea")
                             loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                            cost += Math.abs(lvtarget - lvtmp);
+                            cost += Math.abs(lvtarget - lvcur);
+                            cost += 1;
                             // indexは次の前に挿入する
-                            return [cost, loadPredict, i];
+                            return [cost, loadPredict, i + 1];
                         }
-                        // そうでないなら次は下向き(で、コストを加算しないで次へ)
-                        loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                        cost -= 1;
-                        direction = "down";
-                        continue
                     }
-                    if (destqueue[i][0] > lvtarget && lvcur < lvtarget) { // もし、次の目的地がターゲットを超えるのであればそこまでの距離を生産
-                        cost += Math.abs(lvtarget - lvtmp);
+                    if (destqueue[i][0] > lvtarget && lvtarget > lvcur && directionTarget !== "down") {
+                        // 次の目的地がターゲットを超えるのであればそこまでの距離を生産
+                        // この場合、上記の通り、directionTargetはdownではいけない
+                        console.log("target is between area[up");
+                        cost += Math.abs(lvtarget - lvcur);
                         // 次の目的地の前に目的地があるのだからi-1
                         return [cost, loadPredict, i];
                     }
                     // 単調増加中である場合、そこまでの距離を足す
+                    console.log("continue");
                     loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                    cost += Math.abs(lvtmp - destqueue[i][0]);
-                    lvtmp = destqueue[i][0];
-                } else if (direction === "down") {
-                    if (destqueue[i][0] > lvtmp) { // 上向きになったとき場合
-                        if(lvtarget < lvtmp) { // もし、目標がより下であったならそれを返す
+                    cost += Math.abs(lvcur - destqueue[i][0]);
+                    lvcur = destqueue[i][0];
+                }
+                    /******************/
+                    /* 下り */
+                /******************/
+                else if (direction === "down") {
+                    if( (i + 1) < destqueue.length ) {
+                        /* もしも、次はupになるのだが、targetが今より下になる場合、 */
+                        if (destqueue[i][0] < destqueue[i + 1][0] && lvtarget < lvcur) {
+                            // 上が押されていても下が押されていても気にしないで下に突っ走ることになる
+                            console.log(" target is more underarea")
                             loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                            cost += Math.abs(lvtarget - lvtmp);
+                            cost += Math.abs(lvtarget - lvcur);
+                            cost += 1;
                             // indexは次の前に挿入する
-                            return [cost, loadPredict, i];
+                            return [cost, loadPredict, i + 1];
                         }
-                        // そうでないなら下向きになったとみなす(で、コストを加算しないで次へ)
-                        loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                        cost -= 1;
-                        direction = "up";
-                        continue
                     }
-                    if (destqueue[i][0] < lvtarget && lvcur > lvtarget) { // もし、次の目的地がターゲットを超えるのであればそこまでの距離を生産
-                        cost += Math.abs(lvtarget - lvtmp);
+                    if (destqueue[i][0] < lvtarget && lvtarget < lvcur && directionTarget !== "up") {
+                        // もし、目的地がターゲットを超えるのであればそこまでの距離を生産
+                        // この場合、上記の通り、directionTargetはupではいけない
+                        console.log("target is between area[down]");
+                        cost += Math.abs(lvtarget - lvcur);
                         // 次の目的地の前に目的地があるのだからi-1
                         return [cost, loadPredict, i];
                     }
-                    // 単調減少中である場合、そこまでの距離を足す
+                    // 単調増加中である場合、そこまでの距離を足す
+                    console.log("continue");
                     loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                    cost += Math.abs(lvtmp - destqueue[i][0]);
-                    lvtmp = destqueue[i][0];
-                } else if (direction === "stop") {
-                    if (destqueue[i][0] < lvtmp) {
-                        direction = "down";
-                    } else if (destqueue[i][0] > lvtmp) {
-                        direction = "up";
-                    } else {
-                        break;
-                    }
-                    loadPredict += diffPredictLoadByListInfo(destqueue[i], maxPassengerCount); // 階に停まるのでpredictload更新
-                    cost += Math.abs(lvtmp - destqueue[i][0]);
-                    lvtmp = destqueue[i][0];
+                    cost += Math.abs(lvcur - destqueue[i][0]);
+                    lvcur = destqueue[i][0];
                 }
+
+                /******************/
+                /* 上下反転ロジック。 */
+                /* 次が今までの移動方向に対して逆方向に進む方向なのであれば、方向を逆転させる*/
+                /******************/
+                if( (i + 1) < destqueue.length ) {
+                    if (direction === "up") {
+                        // 次の階は下方であり、対象は今の位置よりも下なのであれば下向きにする
+                        if (destqueue[i+ 1][0] < lvcur) {
+                            console.log(" reverse!")
+                            direction = "down";
+                        }
+                    } else if (direction === "down") {
+                        // 次の階は上方であり、対象は今の位置よりも上なのであれば上向きにする
+                        if (destqueue[i + 1][0] > lvcur) {
+                            console.log(" reverse!")
+                            direction = "up";
+                        }
+                    }
+                }
+
             }
-            // console.debug("index" + i)
+            console.debug("final: " + i + " lvcur=" + lvcur + " queue=" + destqueue[i] + " lp=" + loadPredict + " cost: " + cost + " dir=" + direction)
             // もう最後の地点まで移動したので、その地点分の待機時間を追加
             cost += 1;
             // 最後の地点からの距離を加算する
-            cost += Math.abs(lvtmp - lvtarget);
+            cost += Math.abs(lvcur - lvtarget);
             return [cost, loadPredict, i]
         }
 
@@ -249,6 +272,37 @@
             }
         }
 
+        // typeはU or D
+        function elevaorSelect(floorNum, type) {
+            candidateElevatorNum = -1; // -1 = 未選択
+            candidateCost = 10
+            candidateIndex = -1
+            for (var i = 0; i < num_allelevator; i++) {
+                e = elevator_list[i];
+                predict = calcDistanceLoad(e.internalQueue, e.currentFloor(), floorNum, e.destinationDirection(),
+                    e.loadFactor(), e.maxPassengerCount());
+                var cost = predict[0];
+                var pl = predict[1];
+                var index = predict[2];
+                if (pl > 1) {
+                    console.log(" Elevator[" + i + "]: cantidate - cost: " + cost + " load: " + pl + "current(" + e.loadFactor() +") index: " + index);
+                    console.log(" Elevator[" + i + "]: load will be high. SKIP.");
+                } else {
+                    console.log(" Elevator[" + i + "]: cantidate - cost: " + cost + " load: " + pl + "current(" + e.loadFactor() +") index: " + index);
+                    if (candidateCost > cost) { // コストが小さいなら
+                        candidateCost = cost;
+                        candidateIndex = index;
+                        candidateElevatorNum = i;
+                    }
+                }
+                if (candidateElevatorNum === -1) {
+                    console.log(" Unfortunately! All elevators load is too high! ")
+                } else {
+                    addQueue(elevator_list[candidateElevatorNum], floorNum, type, candidateIndex);
+                }
+            }
+        }
+
         /* 表示灯を変更する */
         function goingUp(elevator){ elevator.goingUpIndicator(true); elevator.goingDownIndicator(false); }
         function goingDown(elevator){ elevator.goingUpIndicator(false); elevator.goingDownIndicator(true); }
@@ -288,11 +342,15 @@
                 } else {
                     console.log(" floonum is EXIST in internalQueue")
                     /* エントリが存在する場合、それがフロア呼び出しであるなら、"B"に変える。Bの場合はそのまま */
-                    if (alreadyEntry[1] === "F") {
+                    if (alreadyEntry[1] === "U") {
                         console.log(" [OK_] already Floor call was exist. change to floor call")
-                        elevator.internalQueue[alreadyEntry[0]][1] = "B";
+                        elevator.internalQueue[alreadyEntry[0]][1] = "EU";
                         console.log(" [OK_] change to " + elevator.internalQueue)
-                    } else if (alreadyEntry[1] === "B") {
+                    } else if (alreadyEntry[1] === "D") {
+                        console.log(" [OK_] already Floor call was exist. change to floor call")
+                        elevator.internalQueue[alreadyEntry[0]][1] = "ED";
+                        console.log(" [OK_] change to " + elevator.internalQueue)
+                    } else if (alreadyEntry[1] === "BU" || alreadyEntry[1] === "BD") {
                         console.log(" [???] already Elavator/Floor call was exist... too jam?")
                         elevator.internalQueue[alreadyEntry[0]][1] = "B";
                     } else if (alreadyEntry[1] === "E") {
@@ -338,52 +396,15 @@
         ■
          */
         floor_list.forEach(function(floor) {
-            floor.on("up_button_pressed down_button_pressed", function() {
+            floor.on("up_button_pressed", function() {
                 floorNum = floor.floorNum()
                 console.log("Floor[" + floorNum + "]: button_pressed");
-                candidateElevatorNum = -1; // -1 = 未選択
-                candidateCost = 10
-                candidateIndex = -1
-                for (var i = 0; i < num_allelevator; i++) {
-                    e = elevator_list[i];
-                    predict = calcDistanceLoad(e.internalQueue, e.currentFloor(), floorNum, e.destinationDirection(),
-                        e.loadFactor(), e.maxPassengerCount());
-                    var cost = predict[0];
-                    var pl = predict[1];
-                    var index = predict[2];
-                    if (pl > 1) {
-                        console.log(" Elevator[" + i + "]: load will be high. SKIP.");
-                    } else {
-                        console.log(" Elevator[" + i + "]: cantidate - cost: " + cost + " load: " + pl + " index: " + index);
-                        if (candidateCost > cost) { // コストが小さいなら
-                            candidateCost = cost;
-                            candidateIndex = index;
-                            candidateElevatorNum = i;
-                        }
-                    }
-                    if (candidateElevatorNum === -1) {
-                        console.log(" Unfortunately! All elevators load is too high! ")
-                    } else {
-                        addQueue(elevator_list[candidateElevatorNum], floorNum, "F", candidateIndex);
-                    }
-                }
-
-
-                /*
-                console.log(elevator_list[0].number + ": button_pressed");
-
-                function sort_func(a, b){
-                    if( Math.abs(a.currentFloor() - floor.floorNum()) < Math.abs(b.currentFloor() - floor.floorNum())){
-                        return -1;
-                    } else {
-                        return 1;
-                    }
-                }
-
-                elevator_list.sort(sort_func);
-
-                addQueue(elevator_list[0], floor.floorNum(), "F", -1);
-                */
+                elevaorSelect(floorNum, "U")
+            });
+            floor.on("down_button_pressed", function() {
+                floorNum = floor.floorNum()
+                console.log("Floor[" + floorNum + "]: button_pressed");
+                elevaorSelect(floorNum, "D")
             });
         });
     },
