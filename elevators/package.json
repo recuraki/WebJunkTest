@@ -1,0 +1,18 @@
+{
+  "name": "elevators",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "babel-core": "^6.26.3",
+    "jest": "^24.9.0",
+    "jest-babel": "^1.0.1",
+    "none": "^1.0.0"
+  }
+}
